@@ -38,17 +38,7 @@ class Genre(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255))
 
-
-# сериализация модели Movie
-class MovieSchema(Schema):
-    id = fields.Int(dump_only=True)
-    title = fields.Str()
-    description = fields.Str()
-    trailer = fields.Str()
-    year = fields.Str()
-    rating = fields.Float()
-    genre_id = fields.Int()
-    director_id = fields.Int()
+    movie = db.relationship("Movie")
 
 
 # сериализация модели Director
@@ -63,6 +53,20 @@ class GenreSchema(Schema):
     name = fields.Str()
 
 
+# сериализация модели Movie
+class MovieSchema(Schema):
+    id = fields.Int(dump_only=True)
+    title = fields.Str()
+    description = fields.Str()
+    trailer = fields.Str()
+    year = fields.Str()
+    rating = fields.Float()
+    genre_id = fields.Int()
+    genre = fields.Nested(GenreSchema)
+    director_id = fields.Int()
+    director = fields.Nested(DirectorSchema)
+
+
 api = Api(app)
 movie_ns = api.namespace('movies')
 director_ns = api.namespace('directors')
@@ -72,8 +76,10 @@ movie_schema = MovieSchema()
 movies_schema = MovieSchema(many=True)
 
 director_schema = DirectorSchema()
+directors_schema = DirectorSchema(many=True)
 
 genre_schema = GenreSchema()
+genres_schema = GenreSchema(many=True)
 
 
 @movie_ns.route('/')
@@ -106,9 +112,18 @@ class MoviesViews(Resource):
 
         return movies_schema.dump(all_movies), 200
 
+    def post(self):
+
+        with db.session.begin():
+            new_movie_data = request.json
+            new_movie = Movie(**new_movie_data)
+            db.session.add(new_movie)
+            return '', 201
+
 
 @movie_ns.route('/<int:mid>/')
 class MovieViews(Resource):
+
     def get(self, mid):
         try:
             movie = db.session.query(Movie).filter(Movie.id == mid).one()
@@ -117,9 +132,78 @@ class MovieViews(Resource):
         except NoResultFound as e:
             return {'error': f'{e}'}, 404
 
+    def put(self, mid):
+        try:
+            update_elements = request.json
+            movie = db.session.query(Movie).filter(Movie.id == mid).one()
+            movie.title = update_elements.get('title')
+            movie.description = update_elements.get('description')
+            movie.trailer = update_elements.get('trailer')
+            movie.year = update_elements.get('year')
+            movie.rating = update_elements.get('rating')
+            movie.genre_id = update_elements.get('genre_id')
+            movie.director_id = update_elements.get('director_id')
+            db.session.commit()
+            return '', 204
+        except NoResultFound as e:
+            return {'error': f'{e}'}, 404
+
+    def patch(self, mid):
+        try:
+            with db.session.begin():
+                new_element_data = request.json
+                movie = db.session.query(Movie).filter(Movie.id == mid).one()
+
+                if 'title' in new_element_data:
+                    movie.title = new_element_data['title']
+                    return '', 204
+
+                if 'description' in new_element_data:
+                    movie.description = new_element_data['description']
+                    return '', 204
+
+                if 'trailer' in new_element_data:
+                    movie.trailer = new_element_data['trailer']
+                    return '', 204
+
+                if 'year' in new_element_data:
+                    movie.year = new_element_data['year']
+                    return '', 204
+
+                if 'year' in new_element_data:
+                    movie.year = new_element_data['year']
+                    return '', 204
+
+                if 'rating' in new_element_data:
+                    movie.rating = new_element_data['rating']
+                    return '', 204
+
+                if 'genre_id' in new_element_data:
+                    movie.genre_id = new_element_data['genre_id']
+                    return '', 204
+
+                if 'director_id' in new_element_data:
+                    movie.director_id = new_element_data['director_id']
+                    return '', 204
+        except NoResultFound as e:
+            return {'error': f'{e}'}, 404
+
+    def delete(self, mid):
+        try:
+            with db.session.begin():
+                movie = db.session.query(Movie).filter(Movie.id == mid).one()
+                db.session.delete(movie)
+                return '', 204
+        except NoResultFound as e:
+            return {'error': f'{e}'}, 404
+
 
 @director_ns.route('/')
 class DirectorsViews(Resource):
+
+    def get(self):
+        all_directors = db.session.query(Director).all()
+        return directors_schema.dump(all_directors), 200
 
     def post(self):
         with db.session.begin():
@@ -151,9 +235,33 @@ class DirectorViews(Resource):
         except NoResultFound as e:
             return {'error': f'{e}'}, 404
 
+    def get(self, dir_id):
+        try:
+            director = db.session.query(Director).filter(Director.id == dir_id).one()
+            return director_schema.dump(director), 200
+        except NoResultFound as e:
+            return {'error': f'{e}'}, 404
+
+    def patch(self, dir_id):
+        try:
+            with db.session.begin():
+                new_element_data = request.json
+                director = db.session.query(Director).filter(Director.id == dir_id).one()
+
+                if 'name' in new_element_data:
+                    director.name = new_element_data['name']
+                    return '', 204
+
+        except NoResultFound as e:
+            return {'error': f'{e}'}, 404
+
 
 @genre_ns.route('/')
 class GenresViews(Resource):
+
+    def get(self):
+        all_genres = db.session.query(Genre).all()
+        return genres_schema.dump(all_genres), 201
 
     def post(self):
         with db.session.begin():
@@ -165,6 +273,13 @@ class GenresViews(Resource):
 
 @genre_ns.route('/<int:gen_id>/')
 class GenreViews(Resource):
+
+    def get(self, gen_id):
+        try:
+            genre_film = db.session.query(Movie).join(Genre).filter(Genre.id == gen_id)
+            return movies_schema.dump(genre_film), 200
+        except NoResultFound as e:
+            return {'error': f'{e}'}, 404
 
     def delete(self, gen_id):
         try:
@@ -182,6 +297,19 @@ class GenreViews(Resource):
                 data_json = request.json
                 genre.name = data_json['name']
                 return '', 204
+        except NoResultFound as e:
+            return {'error': f'{e}'}, 404
+
+    def patch(self, gen_id):
+        try:
+            with db.session.begin():
+                new_element_data = request.json
+                genre = db.session.query(Genre).filter(Genre.id == gen_id).one()
+
+                if 'name' in new_element_data:
+                    genre.name = new_element_data['name']
+                    return '', 204
+
         except NoResultFound as e:
             return {'error': f'{e}'}, 404
 
